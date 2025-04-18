@@ -16,7 +16,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release \
         -DCUDA_ARCH_BIN="89" \
         -DUSE_CUDNN=ON \
         -DBUILD_SHARED_LIBS=ON \
-        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        -DCMAKE_POLICY_VERSION_MINIMUM=4.0
 
 echo "🛠️  Building OpenPose..."
 make -j$(nproc)
