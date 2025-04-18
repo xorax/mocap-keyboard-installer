@@ -14,7 +14,7 @@ install_all() {
   sudo pacman -Syu --noconfirm
 
   echo "📥 Installing dependencies..."
-  sudo pacman -S --needed --noconfirm     python python-pip opencv python-opencv ffmpeg cmake     base-devel git qt5-base xdotool     extra-cmake-modules plasma-sdk kde-cli-tools     cuda cudnn glog openblas protobuf boost eigen
+  sudo pacman -S --needed --noconfirm     python python-pip opencv python-opencv ffmpeg cmake     base-devel git qt5-base xdotool     extra-cmake-modules plasma-sdk kde-cli-tools     cuda cudnn google-glog openblas protobuf boost eigen
 
   echo "🐍 Creating virtual environment..."
   python -m venv "$VENV_DIR"
