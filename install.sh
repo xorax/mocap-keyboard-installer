@@ -3,6 +3,7 @@ set -e
 
 # == Settings ==
 USER_HOME="$HOME"
+CACHE_DIR="$USER_HOME/.cache/mocap-install"
 VENV_DIR="$USER_HOME/mocap-env"
 PROJECT_DIR="$USER_HOME/mocap-input"
 SERVICE_NAME="mocap-input.service"
@@ -44,6 +45,18 @@ install_dependencies() {
   check_dependency protobuf protobuf
   check_dependency boost boost
   check_dependency eigen eigen
+
+  # Install specific version of Protobuf
+  log_info "Installing specific version of Protobuf..."
+  mkdir -p "$CACHE_DIR"
+  wget -P "$CACHE_DIR" https://github.com/protocolbuffers/protobuf/releases/download/v30.1.0/protobuf-cpp-30.1.0.tar.gz
+  tar -xzf "$CACHE_DIR/protobuf-cpp-30.1.0.tar.gz" -C "$CACHE_DIR"
+  cd "$CACHE_DIR/protobuf-30.1.0"
+  ./configure
+  make
+  sudo make install
+  sudo ldconfig
+  cd ..
 }
 
 # == Virtual Environment Management ==
@@ -111,9 +124,9 @@ install_all() {
   pip install mediapipe opencv-python pynput PyQt5 matplotlib
 
   log_info "🧠 Cloning OpenPose..."
-  cd "$USER_HOME"
-  git clone https://github.com/CMU-Perceptual-Computing-Lab/openpose.git || true
-  cd openpose && mkdir -p build && cd build
+  mkdir -p "$CACHE_DIR"
+  git clone https://github.com/CMU-Perceptual-Computing-Lab/openpose.git "$CACHE_DIR/openpose" || true
+  cd "$CACHE_DIR/openpose" && mkdir -p build && cd build
 
   log_info "🛠️  Configuring OpenPose build..."
   cmake .. -DCMAKE_BUILD_TYPE=Release \
@@ -122,7 +135,9 @@ install_all() {
            -DCUDA_ARCH_BIN="89" \
            -DUSE_CUDNN=ON \
            -DBUILD_SHARED_LIBS=ON \
-           -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+           -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+           -DCMAKE_CXX_COMPILER=g++ \
+           -DCMAKE_C_COMPILER=gcc
 
   log_info "🛠️  Building OpenPose..."
   make -j$(nproc)
