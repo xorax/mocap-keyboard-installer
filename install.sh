@@ -8,33 +8,129 @@ PROJECT_DIR="$USER_HOME/mocap-input"
 SERVICE_NAME="mocap-input.service"
 TOGGLE_SCRIPT="$USER_HOME/.local/bin/mocap-toggle.sh"
 
-# == Installation ==
+# == Logging Functions ==
+log_error() {
+  echo "❌ Error: $1" >&2
+}
+
+log_info() {
+  echo "ℹ️  $1"
+}
+
+# == Dependency Checks ==
+check_dependency() {
+  if ! command -v $1 &> /dev/null; then
+    log_info "$1 is not installed. Installing..."
+    sudo pacman -S --needed --noconfirm $2
+  fi
+}
+
+install_dependencies() {
+  log_info "Checking and installing dependencies..."
+  check_dependency python python
+  check_dependency pip python-pip
+  check_dependency ffmpeg ffmpeg
+  check_dependency cmake cmake
+  check_dependency git git
+  check_dependency qt5-base qt5-base
+  check_dependency xdotool xdotool
+  check_dependency extra-cmake-modules extra-cmake-modules
+  check_dependency plasma-sdk plasma-sdk
+  check_dependency kde-cli-tools kde-cli-tools
+  check_dependency cuda cuda
+  check_dependency cudnn cudnn
+  check_dependency google-glog google-glog
+  check_dependency openblas openblas
+  check_dependency protobuf protobuf
+  check_dependency boost boost
+  check_dependency eigen eigen
+}
+
+# == Virtual Environment Management ==
+activate_venv() {
+  if [[ -d "$VENV_DIR" ]]; then
+    source "$VENV_DIR/bin/activate"
+  else
+    log_info "Creating virtual environment..."
+    python -m venv "$VENV_DIR"
+    source "$VENV_DIR/bin/activate"
+  fi
+}
+
+# == Configuration File Management ==
+backup_config() {
+  if [[ -f "$PROJECT_DIR/pose_mappings.json" ]]; then
+    cp "$PROJECT_DIR/pose_mappings.json" "$PROJECT_DIR/pose_mappings.json.bak"
+    log_info "Backup of pose_mappings.json created."
+  fi
+}
+
+restore_config() {
+  if [[ -f "$PROJECT_DIR/pose_mappings.json.bak" ]]; then
+    cp "$PROJECT_DIR/pose_mappings.json.bak" "$PROJECT_DIR/pose_mappings.json"
+    log_info "pose_mappings.json restored from backup."
+  fi
+}
+
+# == Service Management ==
+create_service() {
+  if systemctl --user is-enabled "$SERVICE_NAME" &> /dev/null; then
+    log_info "Systemd service $SERVICE_NAME already exists. Skipping creation."
+  else
+    log_info "Creating systemd service..."
+    cat << EOF | sudo tee /etc/systemd/system/$SERVICE_NAME
+[Unit]
+Description=Real-time Mocap Key Mapper
+After=graphical.target
+
+[Service]
+ExecStart=$VENV_DIR/bin/python $PROJECT_DIR/mocap_keymap.py
+Restart=on-failure
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=$USER_HOME/.Xauthority
+
+[Install]
+WantedBy=default.target
+EOF
+    systemctl --user daemon-reload
+    systemctl --user enable "$SERVICE_NAME"
+    systemctl --user start "$SERVICE_NAME"
+    log_info "Service $SERVICE_NAME created and started."
+  fi
+}
+
+# == Main Installation Function ==
 install_all() {
-  echo "📦 Updating system..."
+  log_info "📦 Updating system..."
   sudo pacman -Syu --noconfirm
 
-  echo "📥 Installing dependencies..."
-  sudo pacman -S --needed --noconfirm     python python-pip opencv python-opencv ffmpeg cmake     base-devel git qt5-base xdotool     extra-cmake-modules plasma-sdk kde-cli-tools     cuda cudnn google-glog openblas protobuf boost eigen
+  install_dependencies
 
-  echo "🐍 Creating virtual environment..."
-  python -m venv "$VENV_DIR"
-  source "$VENV_DIR/bin/activate"
+  activate_venv
   pip install --upgrade pip
   pip install mediapipe opencv-python pynput PyQt5 matplotlib
 
-  echo "🧠 Cloning OpenPose..."
+  log_info "🧠 Cloning OpenPose..."
   cd "$USER_HOME"
   git clone https://github.com/CMU-Perceptual-Computing-Lab/openpose.git || true
   cd openpose && mkdir -p build && cd build
 
-  cmake .. -DCMAKE_BUILD_TYPE=Release            -DBUILD_PYTHON=ON            -DBUILD_EXAMPLES=OFF            -DCUDA_ARCH_BIN="89"            -DUSE_CUDNN=ON            -DBUILD_SHARED_LIBS=ON
+  log_info "🛠️  Configuring OpenPose build..."
+  cmake .. -DCMAKE_BUILD_TYPE=Release \
+           -DBUILD_PYTHON=ON \
+           -DBUILD_EXAMPLES=OFF \
+           -DCUDA_ARCH_BIN="89" \
+           -DUSE_CUDNN=ON \
+           -DBUILD_SHARED_LIBS=ON \
+           -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
+  log_info "🛠️  Building OpenPose..."
   make -j$(nproc)
 
-  echo "📁 Creating project directory..."
+  log_info "📁 Creating project directory..."
   mkdir -p "$PROJECT_DIR"
 
-  echo "📜 Writing mocap_keymap.py..."
+  log_info "📜 Writing mocap_keymap.py..."
   cat << EOF > "$PROJECT_DIR/mocap_keymap.py"
 import json
 import time
@@ -85,7 +181,7 @@ cap.release()
 cv2.destroyAllWindows()
 EOF
 
-  echo "📜 Writing mocap_mapper_gui.py..."
+  log_info "📜 Writing mocap_mapper_gui.py..."
   cat << EOF > "$PROJECT_DIR/mocap_mapper_gui.py"
 import json
 import sys
@@ -152,26 +248,12 @@ window.show()
 sys.exit(app.exec_())
 EOF
 
-  echo "📜 Creating empty mapping config..."
+  log_info "📜 Creating empty mapping config..."
   echo "[]" > "$PROJECT_DIR/pose_mappings.json"
 
-  echo "⚙️ Creating systemd service..."
-  cat << EOF | sudo tee /etc/systemd/system/$SERVICE_NAME
-[Unit]
-Description=Real-time Mocap Key Mapper
-After=graphical.target
+  create_service
 
-[Service]
-ExecStart=$VENV_DIR/bin/python $PROJECT_DIR/mocap_keymap.py
-Restart=on-failure
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=$USER_HOME/.Xauthority
-
-[Install]
-WantedBy=default.target
-EOF
-
-  echo "🖱️ Creating KDE toggle script..."
+  log_info " Semiconductor toggle script..."
   mkdir -p "$USER_HOME/.local/bin"
   cat << EOF > "$TOGGLE_SCRIPT"
 #!/bin/bash
@@ -180,7 +262,7 @@ STATUS=\$(systemctl --user is-active \$SERVICE)
 
 if [ "\$STATUS" = "active" ]; then
   systemctl --user stop \$SERVICE
-  notify-send "🛑 Mocap Input Disabled"
+  notify-send " Mocap Input Disabled"
 else
   systemctl --user start \$SERVICE
   notify-send "✅ Mocap Input Enabled"
@@ -189,37 +271,44 @@ EOF
 
   chmod +x "$TOGGLE_SCRIPT"
 
-  echo "🔄 Reloading systemd daemon..."
+  log_info " Reloading systemd daemon..."
   loginctl enable-linger "$USER"
   systemctl --user daemon-reexec
   systemctl --user daemon-reload
 
-  echo "✅ Installation complete!"
-  echo "Run GUI: python $PROJECT_DIR/mocap_mapper_gui.py"
-  echo "Toggle via: $TOGGLE_SCRIPT"
+  log_info "✅ Installation complete!"
+  log_info "Run GUI: python $PROJECT_DIR/mocap_mapper_gui.py"
+  log_info "Toggle via: $TOGGLE_SCRIPT"
 }
 
-# == Uninstallation ==
+# == Main Uninstallation Function ==
 uninstall_all() {
-  echo "🗑️ Removing virtual environment..."
+  read -p "Are you sure you want to uninstall? (y/N): " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    log_info "Uninstall aborted."
+    exit 0
+  fi
+
+  log_info "Removing virtual environment..."
   rm -rf "$VENV_DIR"
 
-  echo "🗑️ Removing project files..."
+  log_info "Removing project files..."
   rm -rf "$PROJECT_DIR"
 
-  echo "🗑️ Removing toggle script..."
+  log_info "Removing toggle script..."
   rm -f "$TOGGLE_SCRIPT"
 
-  echo "🗑️ Disabling and removing systemd service..."
+  log_info "Disabling and removing systemd service..."
   systemctl --user stop "$SERVICE_NAME" || true
   systemctl --user disable "$SERVICE_NAME" || true
   sudo rm -f "/etc/systemd/system/$SERVICE_NAME"
   systemctl --user daemon-reload
 
-  echo "🧹 Optionally remove OpenPose (not deleting automatically)..."
-  echo "Run: rm -rf \$HOME/openpose"
+  log_info "Optionally remove OpenPose (not deleting automatically)..."
+  log_info "Run: rm -rf \$HOME/openpose"
 
-  echo "✅ Uninstall complete."
+  log_info "Uninstall complete."
 }
 
 # == Main ==
